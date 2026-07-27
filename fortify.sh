@@ -3,58 +3,46 @@ set -e
 
 echo "===== Installing Fortify CLI ====="
 
-curl -L \
-  https://github.com/fortify/fcli/releases/latest/download/fcli-linux.tgz \
-  -o fcli.tgz
+curl -L https://github.com/fortify/fcli/releases/latest/download/fcli-linux.tgz -o fcli.tgz
 
 mkdir -p fcli
 tar -xzf fcli.tgz -C fcli
-
 chmod +x fcli/fcli
+
 export PATH=$PWD/fcli:$PATH
 
 echo "Fortify CLI Version:"
 fcli --version
 
+#######################################################
+# Download ScanCentral Client from Public GitHub Repo #
+#######################################################
+
 echo "===== Downloading ScanCentral Client ====="
 
 curl -L \
-  -u "$FOD_USER:$FOD_PASSWORD" \
-  -o Fortify_ScanCentral_Client.zip \
-  "https://ams.fortify.com/Tools/ScanCentral/Fortify_ScanCentral_Client_Latest_x64.zip"
-
-echo "===== Verifying Download ====="
-
-ls -lh Fortify_ScanCentral_Client.zip
-file Fortify_ScanCentral_Client.zip
-
-if ! unzip -t Fortify_ScanCentral_Client.zip >/dev/null 2>&1; then
-    echo "ERROR: Downloaded file is not a valid ZIP."
-    echo "The FoD server most likely returned an HTML login page or an authentication error."
-    echo ""
-    echo "First 20 lines of the downloaded file:"
-    head -20 Fortify_ScanCentral_Client.zip
-    exit 1
-fi
+https://github.com/sathyatg3377/Fortify_ScanCentral_Client_Latest_x64/archive/refs/heads/main.zip \
+-o scancentral.zip
 
 echo "===== Extracting ScanCentral Client ====="
 
-mkdir -p scancentral
-unzip -q Fortify_ScanCentral_Client.zip -d scancentral
+unzip -q scancentral.zip
 
-find scancentral -type f -exec chmod +x {} \;
+SC_DIR=$(find . -maxdepth 1 -type d -name "Fortify_ScanCentral_Client_Latest_x64-*")
 
-SCANCENTRAL_BIN=$(find scancentral -type f -name scancentral | head -1)
+echo "ScanCentral Directory: $SC_DIR"
 
-if [ -z "$SCANCENTRAL_BIN" ]; then
-    echo "ERROR: ScanCentral executable not found."
-    exit 1
-fi
+chmod -R +x "$SC_DIR/bin"
 
-export PATH=$(dirname "$SCANCENTRAL_BIN"):$PATH
+export PATH="$SC_DIR/bin:$PATH"
 
-echo "ScanCentral Version:"
+echo "===== ScanCentral Version ====="
+
 scancentral --version
+
+#######################################################
+# Login to FoD
+#######################################################
 
 echo "===== Login to FoD ====="
 
@@ -64,19 +52,31 @@ fcli fod session login \
   -p "$FOD_PASSWORD" \
   -t "$FOD_TENANT"
 
-echo "===== Installing Node Dependencies ====="
+#######################################################
+# Build NodeJS
+#######################################################
+
+echo "===== Installing Node Modules ====="
 
 npm install
+
+#######################################################
+# Package
+#######################################################
 
 echo "===== Packaging Source ====="
 
 scancentral package -o package.zip
 
+#######################################################
+# Start Scan
+#######################################################
+
 echo "===== Starting Scan ====="
 
 fcli fod sast-scan start \
-  --release "$FOD_RELEASE" \
-  --file package.zip
+    --release "$FOD_RELEASE" \
+    --file package.zip
 
 echo "===== Waiting for Scan ====="
 
