@@ -23,13 +23,13 @@ fcli fod session login \
   -p "$FOD_PASSWORD" \
   -t "$FOD_TENANT"
 
-echo "Building Project..."
+echo "Installing Node.js dependencies..."
 
-mvn clean package
+npm install
 
 echo "Packaging Source..."
 
-scancentral package -bt mvn -o package.zip
+scancentral package -o package.zip
 
 echo "Starting Scan..."
 
