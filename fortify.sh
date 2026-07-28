@@ -89,12 +89,13 @@ mkdir -p reports
 #######################################################
 # Download FPR
 #######################################################
-
 echo "===== Downloading FPR ====="
 
 fcli fod sast-scan download \
     ::scan:: \
-    --output reports/Fortify_Report.fpr
+    -f reports/Fortify_Report.fpr
+
+echo "FPR downloaded successfully."
 
 #######################################################
 # Save Scan Summary
