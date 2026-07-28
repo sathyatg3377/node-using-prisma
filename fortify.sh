@@ -81,24 +81,25 @@ fcli --version
 # DOWNLOAD SCANCENTRAL CLIENT
 ###############################################################################
 
-log "Downloading ScanCentral Client..."
+echo "===== Downloading ScanCentral Client ====="
 
 curl -L \
 https://github.com/sathyatg3377/Fortify_ScanCentral_Client_Latest_x64/archive/refs/heads/main.zip \
 -o scancentral.zip
 
+echo "===== Extracting ScanCentral Client ====="
+
 unzip -q scancentral.zip
 
 SC_DIR=$(find . -maxdepth 1 -type d -name "Fortify_ScanCentral_Client_Latest_x64-*")
 
-if [ -z "$SC_DIR" ]; then
-    error "Unable to locate ScanCentral Client."
-    exit 1
-fi
+echo "ScanCentral Directory: $SC_DIR"
+
+chmod -R +x "$SC_DIR/bin"
 
 export PATH="$SC_DIR/bin:$PATH"
 
-log "ScanCentral Version"
+echo "===== ScanCentral Version ====="
 
 scancentral --version
 
