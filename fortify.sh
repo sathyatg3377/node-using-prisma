@@ -77,10 +77,11 @@ echo "===== Starting Scan ====="
 fcli fod sast-scan start \
     --release "$FOD_RELEASE" \
     --file package.zip
+    --store scan
 
 echo "===== Waiting for Scan ====="
 
-fcli fod sast-scan wait-for ::last::
+fcli fod sast-scan wait-for ::scan::
 
 echo "===== Policy Check ====="
 
