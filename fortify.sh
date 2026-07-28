@@ -80,7 +80,7 @@ fcli fod sast-scan start \
 
 echo "===== Waiting for Scan ====="
 
-fcli fod sast-scan wait
+fcli fod sast-scan wait-for ::last::
 
 echo "===== Policy Check ====="
 
