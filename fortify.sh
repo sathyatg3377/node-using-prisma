@@ -74,10 +74,7 @@ scancentral package -o package.zip
 
 echo "===== Starting Scan ====="
 
-fcli fod sast-scan start \
-    --release "$FOD_RELEASE" \
-    --file package.zip
-    --store scan
+fcli fod sast-scan start --release "$FOD_RELEASE" --file package.zip --store scan
 
 echo "===== Waiting for Scan ====="
 
