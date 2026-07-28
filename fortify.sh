@@ -66,20 +66,15 @@ done
 # INSTALL FCLI
 ###############################################################################
 
-log "Installing Fortify CLI..."
+curl -L https://github.com/fortify/fcli/releases/latest/download/fcli-linux.tgz -o fcli.tgz
 
-curl -L \
-https://github.com/fortify/fcli/releases/download/v3.23.3/fcli-linux.tgz \
--o fcli.tgz
-
-tar -xzf fcli.tgz
-
+mkdir -p fcli
+tar -xzf fcli.tgz -C fcli
 chmod +x fcli/fcli
 
 export PATH=$PWD/fcli:$PATH
 
-log "Fortify CLI Version"
-
+echo "Fortify CLI Version:"
 fcli --version
 
 ###############################################################################
