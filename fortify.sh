@@ -1,70 +1,7 @@
 #!/bin/bash
-###############################################################################
-# OpenText Fortify on Demand CI/CD Script
-# Version : 1.0
-# Platform: AWS CodeBuild
-# Author  : Sathya Narayanan
-###############################################################################
+set -e
 
-set -euo pipefail
-
-###############################################################################
-# CONFIGURATION
-###############################################################################
-
-REPORT_DIR="reports"
-SC_VERSION="25.4.0"
-
-mkdir -p "${REPORT_DIR}"
-
-###############################################################################
-# COLORS
-###############################################################################
-
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log(){
-    echo -e "${GREEN}[$(date '+%F %T')]${NC} $1"
-}
-
-warn(){
-    echo -e "${YELLOW}[$(date '+%F %T')] WARNING:${NC} $1"
-}
-
-error(){
-    echo -e "${RED}[$(date '+%F %T')] ERROR:${NC} $1"
-}
-
-###############################################################################
-# VALIDATE ENVIRONMENT VARIABLES
-###############################################################################
-
-required=(
-FOD_URL
-FOD_USER
-FOD_PASSWORD
-FOD_TENANT
-FOD_APPLICATION
-FOD_RELEASE
-)
-
-log "Validating environment variables..."
-
-for var in "${required[@]}"
-do
-    if [ -z "${!var:-}" ]; then
-        error "$var is not configured."
-        exit 1
-    fi
-done
-
-###############################################################################
-# INSTALL FCLI
-###############################################################################
+echo "===== Installing Fortify CLI ====="
 
 curl -L https://github.com/fortify/fcli/releases/latest/download/fcli-linux.tgz -o fcli.tgz
 
@@ -77,9 +14,9 @@ export PATH=$PWD/fcli:$PATH
 echo "Fortify CLI Version:"
 fcli --version
 
-###############################################################################
-# DOWNLOAD SCANCENTRAL CLIENT
-###############################################################################
+#######################################################
+# Download ScanCentral Client from Public GitHub Repo #
+#######################################################
 
 echo "===== Downloading ScanCentral Client ====="
 
@@ -103,258 +40,136 @@ echo "===== ScanCentral Version ====="
 
 scancentral --version
 
-###############################################################################
-# LOGIN
-###############################################################################
+#######################################################
+# Login to FoD
+#######################################################
 
-log "Logging into Fortify on Demand..."
+echo "===== Login to FoD ====="
 
 fcli fod session login \
-    --url "$FOD_URL" \
-    -u "$FOD_USER" \
-    -p "$FOD_PASSWORD" \
-    -t "$FOD_TENANT"
+  --url "$FOD_URL" \
+  -u "$FOD_USER" \
+  -p "$FOD_PASSWORD" \
+  -t "$FOD_TENANT"
 
-###############################################################################
-# VERIFY SESSION
-###############################################################################
+#######################################################
+# Build NodeJS
+#######################################################
 
-log "FoD Session"
+echo "===== Installing Node Modules ====="
 
-fcli fod session list
+npm install
 
-###############################################################################
-# CHECK APPLICATION
-###############################################################################
+#######################################################
+# Package
+#######################################################
 
-log "Checking Application..."
+echo "===== Packaging Source ====="
 
-if ! fcli fod app list -o json | grep -q "\"name\":\"${FOD_APPLICATION}\""
-then
-    warn "Application not found."
+scancentral package -o package.zip
 
-    log "Creating Application..."
+#######################################################
+# Start Scan
+#######################################################
 
-    fcli fod app create \
-        --name "$FOD_APPLICATION" \
-        --description "Created from AWS CodeBuild"
-else
-    log "Application already exists."
-fi
+echo "===== Starting Scan ====="
 
-###############################################################################
-# CHECK RELEASE
-###############################################################################
+fcli fod sast-scan start --release "$FOD_RELEASE" --file package.zip --store scan
 
-log "Checking Release..."
+echo "===== Waiting for Scan ====="
 
-if ! fcli fod release list -o json | grep -q "\"releaseName\":\"${FOD_RELEASE}\""
-then
-    warn "Release does not exist."
+fcli fod sast-scan wait-for ::scan::
 
-    log "Creating Release..."
+#######################################################
+# Create Reports Folder
+#######################################################
 
-    fcli fod release create \
-        --application "$FOD_APPLICATION" \
-        --name "$FOD_RELEASE"
-else
-    log "Release already exists."
-fi
+mkdir -p reports
 
-###############################################################################
-# CONFIGURE SAST
-###############################################################################
+#######################################################
+# Download FPR
+#######################################################
 
-log "Checking SAST Configuration..."
-
-if ! fcli fod sast-scan get-config \
-    --release "$FOD_RELEASE" >/dev/null 2>&1
-then
-
-    log "Configuring SAST..."
-
-    fcli fod sast-scan setup \
-        --release "$FOD_RELEASE" \
-        --technology JavaScript \
-        --language-level ES2022
-
-else
-
-    log "SAST already configured."
-
-fi
-
-###############################################################################
-# INSTALL NODE MODULES
-###############################################################################
-
-log "Installing Node Modules..."
-
-npm ci
-
-###############################################################################
-# PACKAGE APPLICATION
-###############################################################################
-
-log "Packaging Application..."
-
-scancentral package \
-    -o package.zip
-
-log "Package created successfully."
-
-###############################################################################
-# START SAST SCAN
-###############################################################################
-
-log "Starting SAST Scan..."
-
-fcli fod sast-scan start \
-    --release "$FOD_RELEASE" \
-    --file package.zip \
-    --store scan
-
-SCAN_ID=$(fcli util variable contents scan --expr "{id}")
-
-log "Scan Started Successfully"
-log "Scan ID : ${SCAN_ID}"
-
-###############################################################################
-# WAIT FOR SCAN
-###############################################################################
-
-log "Waiting for Scan Completion..."
-
-fcli fod sast-scan wait-for ::scan:: \
-    --interval 30s \
-    --timeout 2h
-
-log "Scan Completed"
-
-###############################################################################
-# SCAN DETAILS
-###############################################################################
-
-log "Collecting Scan Details..."
-
-fcli fod sast-scan get "$SCAN_ID" \
-    -o json > ${REPORT_DIR}/ScanResult.json
-
-log "Printing Scan Summary..."
-
-fcli fod sast-scan get "$SCAN_ID"
-
-###############################################################################
-# DOWNLOAD FPR
-###############################################################################
-
-log "Downloading FPR..."
+echo "===== Downloading FPR ====="
 
 fcli fod sast-scan download \
-    "$SCAN_ID" \
-    --file ${REPORT_DIR}/Fortify_Report.fpr
+    ::scan:: \
+    --output reports/Fortify_Report.fpr
 
-###############################################################################
-# DOWNLOAD LATEST FPR (BACKUP)
-###############################################################################
+#######################################################
+# Save Scan Summary
+#######################################################
 
-log "Downloading Latest Scan Result..."
+echo "===== Saving Scan Summary ====="
 
-fcli fod sast-scan download-latest \
-    --release "$FOD_RELEASE" \
-    --file ${REPORT_DIR}/Latest_Report.fpr || true
+fcli fod sast-scan get \
+    ::scan:: \
+    -o json > reports/ScanSummary.json
 
-###############################################################################
-# EXPORT JSON SUMMARY
-###############################################################################
+#######################################################
+# Generate Executive Summary
+#######################################################
 
-log "Exporting JSON Summary..."
+echo "===== Generating Executive Summary ====="
 
-fcli fod sast-scan get "$SCAN_ID" \
-    -o json > ${REPORT_DIR}/ScanSummary.json
+# TODO:
+# Replace EXECUTIVE_TEMPLATE_ID with your FoD Report Template ID
+# Call POST /api/v3/reports
+# Poll until completed
+# Download report to:
+# reports/Executive_Summary.pdf
 
-###############################################################################
-# POLICY CHECK
-###############################################################################
+#######################################################
+# Generate Developer Report
+#######################################################
 
-log "Running Policy Check..."
+echo "===== Generating Developer Report ====="
+
+# TODO:
+# Replace DEVELOPER_TEMPLATE_ID with your FoD Report Template ID
+# Call POST /api/v3/reports
+# Download report to:
+# reports/Developer_Report.pdf
+
+#######################################################
+# Generate Vulnerability Report
+#######################################################
+
+echo "===== Generating Vulnerability Report ====="
+
+# TODO:
+# Replace VULNERABILITY_TEMPLATE_ID with your FoD Report Template ID
+# Call POST /api/v3/reports
+# Download report to:
+# reports/Vulnerability_Report.pdf
+
+#######################################################
+# Policy Check
+#######################################################
+
+echo "===== Running Policy Check ====="
 
 fcli fod action run check-policy \
     --release "$FOD_RELEASE"
 
-###############################################################################
-# LIST VULNERABILITIES
-###############################################################################
+#######################################################
+# Logout
+#######################################################
 
-log "Getting Vulnerability Summary..."
-
-fcli fod vuln list \
-    --release "$FOD_RELEASE" \
-    -o table || true
-
-###############################################################################
-# BUILD INFORMATION
-###############################################################################
-
-log "Creating Build Information..."
-
-cat <<EOF > ${REPORT_DIR}/BuildInfo.txt
-
-=========================================
-OpenText Fortify on Demand Build Summary
-=========================================
-
-Application : ${FOD_APPLICATION}
-
-Release     : ${FOD_RELEASE}
-
-Scan ID     : ${SCAN_ID}
-
-Build Date  : $(date)
-
-=========================================
-
-EOF
-
-###############################################################################
-# OPTIONAL PDF REPORT
-###############################################################################
-
-log "Attempting PDF Report Export..."
-
-fcli fod report download \
-    --release "$FOD_RELEASE" \
-    --type "Vulnerability" \
-    --output ${REPORT_DIR}/Vulnerability_Report.pdf || true
-
-###############################################################################
-# LOGOUT
-###############################################################################
-
-log "Logging out..."
+echo "===== Logout ====="
 
 fcli fod session logout
 
-###############################################################################
-# CLEANUP
-###############################################################################
+#######################################################
+# Generated Files
+#######################################################
 
-log "Cleaning temporary files..."
+echo ""
+echo "========================================="
+echo " Fortify Scan Completed Successfully"
+echo "========================================="
 
-rm -rf package.zip
-rm -rf scancentral.zip
-rm -rf fcli.tgz
+echo ""
+echo "Generated Reports:"
 
-###############################################################################
-# FINISHED
-###############################################################################
-
-log "==============================================="
-log "Fortify Scan Completed Successfully"
-log "==============================================="
-
-log "Artifacts Generated"
-
-ls -lh ${REPORT_DIR}
-
-exit 0
+ls -lh reports
