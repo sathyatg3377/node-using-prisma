@@ -5,22 +5,6 @@ set -e
 # FoD Configuration
 #######################################################
 
-# Configure these as AWS CodeBuild environment variables:
-#
-# FOD_URL
-# FOD_USER
-# FOD_PASSWORD
-# FOD_TENANT
-# FOD_APPLICATION
-# FOD_MICROSERVICE
-# FOD_RELEASE
-#
-# Example:
-#
-# Application  = Node-Prisma
-# Microservice = Node-Prisma-API
-# Release      = Release-1
-
 echo "========================================="
 echo " Fortify FoD Configuration"
 echo "========================================="
@@ -29,14 +13,9 @@ echo "Application  : $FOD_APPLICATION"
 echo "Microservice : $FOD_MICROSERVICE"
 echo "Release      : $FOD_RELEASE"
 
-
 #######################################################
 # Construct FoD Target
 #######################################################
-
-# Format:
-#
-# Application:Microservice:Release
 
 FOD_TARGET="${FOD_APPLICATION}:${FOD_MICROSERVICE}:${FOD_RELEASE}"
 
@@ -61,7 +40,6 @@ tar -xzf fcli.tgz -C fcli
 chmod +x fcli/fcli
 
 export PATH=$PWD/fcli:$PATH
-
 
 echo "===== Fortify CLI Version ====="
 
@@ -88,30 +66,22 @@ echo "===== Extracting ScanCentral Client ====="
 
 unzip -q scancentral.zip
 
-
 SC_DIR=$(find . \
 -maxdepth 1 \
 -type d \
 -name "Fortify_ScanCentral_Client_Latest_x64-*" \
 | head -1)
 
-
 echo "ScanCentral Directory: $SC_DIR"
 
-
 if [ -z "$SC_DIR" ]; then
-
     echo "ERROR: ScanCentral Client directory not found."
-
     exit 1
-
 fi
-
 
 chmod -R +x "$SC_DIR/bin"
 
 export PATH="$SC_DIR/bin:$PATH"
-
 
 echo "===== ScanCentral Version ====="
 
@@ -130,6 +100,21 @@ fcli fod session login \
   -u "$FOD_USER" \
   -p "$FOD_PASSWORD" \
   -t "$FOD_TENANT"
+
+
+#######################################################
+# Automatic Logout
+#######################################################
+
+cleanup() {
+
+    echo ""
+    echo "===== Logout from FoD ====="
+
+    fcli fod session logout || true
+}
+
+trap cleanup EXIT
 
 
 #######################################################
@@ -152,7 +137,6 @@ echo "===== Packaging Source ====="
 scancentral package \
   -o package.zip
 
-
 echo "===== Package Created ====="
 
 ls -lh package.zip
@@ -174,7 +158,6 @@ echo "FoD Target   : $FOD_TARGET"
 
 echo "========================================="
 
-
 fcli fod sast-scan start \
   --release "$FOD_TARGET" \
   --file package.zip \
@@ -190,7 +173,6 @@ echo "===== Waiting for SAST Scan ====="
 
 fcli fod sast-scan wait-for \
   ::scan::
-
 
 echo ""
 echo "========================================="
@@ -218,7 +200,8 @@ echo "Report Timestamp: $REPORT_TIMESTAMP"
 
 
 #######################################################
-# Static Summary Report
+# STATIC SUMMARY REPORT
+# Template -1 = StaticSummary
 #######################################################
 
 echo ""
@@ -227,7 +210,6 @@ echo " Creating Static Summary Report"
 echo "========================================="
 
 SUMMARY_REPORT_NAME="Static-Summary-${FOD_RELEASE}-${REPORT_TIMESTAMP}"
-
 
 fcli fod report create \
   "$SUMMARY_REPORT_NAME" \
@@ -245,7 +227,8 @@ echo "===== Waiting for Static Summary Report ====="
 
 fcli fod report wait-for \
   ::summaryReport:: \
-  --timeout 30m
+  --timeout 30m \
+  --on-unknown-state wait
 
 
 #######################################################
@@ -258,12 +241,12 @@ fcli fod report download \
   ::summaryReport:: \
   --file reports/Static_Summary.pdf
 
-
 echo "Static Summary Report downloaded successfully."
 
 
 #######################################################
-# Static Issue Detail Report
+# STATIC ISSUE DETAIL REPORT
+# Template -2 = StaticIssueDetail
 #######################################################
 
 echo ""
@@ -272,7 +255,6 @@ echo " Creating Static Issue Detail Report"
 echo "========================================="
 
 ISSUE_REPORT_NAME="Static-Issue-Detail-${FOD_RELEASE}-${REPORT_TIMESTAMP}"
-
 
 fcli fod report create \
   "$ISSUE_REPORT_NAME" \
@@ -290,7 +272,8 @@ echo "===== Waiting for Static Issue Detail Report ====="
 
 fcli fod report wait-for \
   ::issueReport:: \
-  --timeout 30m
+  --timeout 30m \
+  --on-unknown-state wait
 
 
 #######################################################
@@ -303,12 +286,12 @@ fcli fod report download \
   ::issueReport:: \
   --file reports/Static_Issue_Detail.pdf
 
-
 echo "Static Issue Detail Report downloaded successfully."
 
 
 #######################################################
-# Static Comprehensive Report
+# STATIC COMPREHENSIVE REPORT
+# Template -4 = StaticComprehensive
 #######################################################
 
 echo ""
@@ -317,7 +300,6 @@ echo " Creating Static Comprehensive Report"
 echo "========================================="
 
 COMPREHENSIVE_REPORT_NAME="Static-Comprehensive-${FOD_RELEASE}-${REPORT_TIMESTAMP}"
-
 
 fcli fod report create \
   "$COMPREHENSIVE_REPORT_NAME" \
@@ -335,7 +317,8 @@ echo "===== Waiting for Static Comprehensive Report ====="
 
 fcli fod report wait-for \
   ::comprehensiveReport:: \
-  --timeout 30m
+  --timeout 30m \
+  --on-unknown-state wait
 
 
 #######################################################
@@ -347,7 +330,6 @@ echo "===== Downloading Static Comprehensive Report ====="
 fcli fod report download \
   ::comprehensiveReport:: \
   --file reports/Static_Comprehensive.pdf
-
 
 echo "Static Comprehensive Report downloaded successfully."
 
@@ -376,21 +358,10 @@ echo "========================================="
 fcli fod action run check-policy \
   --release "$FOD_TARGET"
 
-
 echo ""
 echo "========================================="
 echo " Policy Check Completed Successfully"
 echo "========================================="
-
-
-#######################################################
-# Logout
-#######################################################
-
-echo ""
-echo "===== Logout ====="
-
-fcli fod session logout
 
 
 #######################################################
