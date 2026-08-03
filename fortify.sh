@@ -1,21 +1,59 @@
 #!/bin/bash
 set -e
 
+#######################################################
+# FoD Configuration
+#######################################################
+
+# Example:
+# Application  = Node-Prisma
+# Microservice = Node-Prisma-API
+# Release      = Release-1
+#
+# Configure these as AWS CodeBuild environment variables:
+# FOD_APPLICATION
+# FOD_MICROSERVICE
+# FOD_RELEASE
+
+echo "===== Fortify FoD Configuration ====="
+
+echo "Application  : $FOD_APPLICATION"
+echo "Microservice : $FOD_MICROSERVICE"
+echo "Release      : $FOD_RELEASE"
+
+# Construct:
+# Application:Microservice:Release
+
+FOD_TARGET="${FOD_APPLICATION}:${FOD_MICROSERVICE}:${FOD_RELEASE}"
+
+echo "FoD Target   : $FOD_TARGET"
+
+
+#######################################################
+# Install Fortify CLI
+#######################################################
+
 echo "===== Installing Fortify CLI ====="
 
-curl -L https://github.com/fortify/fcli/releases/latest/download/fcli-linux.tgz -o fcli.tgz
+curl -L \
+https://github.com/fortify/fcli/releases/latest/download/fcli-linux.tgz \
+-o fcli.tgz
 
 mkdir -p fcli
+
 tar -xzf fcli.tgz -C fcli
+
 chmod +x fcli/fcli
 
 export PATH=$PWD/fcli:$PATH
 
 echo "Fortify CLI Version:"
+
 fcli --version
 
+
 #######################################################
-# Download ScanCentral Client from Public GitHub Repo #
+# Download ScanCentral Client from Public GitHub Repo
 #######################################################
 
 echo "===== Downloading ScanCentral Client ====="
@@ -24,21 +62,31 @@ curl -L \
 https://github.com/sathyatg3377/Fortify_ScanCentral_Client_Latest_x64/archive/refs/heads/main.zip \
 -o scancentral.zip
 
+
 echo "===== Extracting ScanCentral Client ====="
 
 unzip -q scancentral.zip
 
-SC_DIR=$(find . -maxdepth 1 -type d -name "Fortify_ScanCentral_Client_Latest_x64-*")
+
+SC_DIR=$(find . \
+-maxdepth 1 \
+-type d \
+-name "Fortify_ScanCentral_Client_Latest_x64-*" \
+| head -1)
+
 
 echo "ScanCentral Directory: $SC_DIR"
+
 
 chmod -R +x "$SC_DIR/bin"
 
 export PATH="$SC_DIR/bin:$PATH"
 
+
 echo "===== ScanCentral Version ====="
 
 scancentral --version
+
 
 #######################################################
 # Login to FoD
@@ -52,6 +100,7 @@ fcli fod session login \
   -p "$FOD_PASSWORD" \
   -t "$FOD_TENANT"
 
+
 #######################################################
 # Build NodeJS
 #######################################################
@@ -60,98 +109,58 @@ echo "===== Installing Node Modules ====="
 
 npm install
 
+
 #######################################################
-# Package
+# Package Application / Microservice
 #######################################################
 
 echo "===== Packaging Source ====="
 
-scancentral package -o package.zip
+scancentral package \
+  -o package.zip
+
+
+echo "===== Package Created ====="
+
+ls -lh package.zip
+
 
 #######################################################
-# Start Scan
+# Start FoD SAST Scan
 #######################################################
 
-echo "===== Starting Scan ====="
+echo "========================================="
+echo " Starting Fortify FoD SAST Scan"
+echo "========================================="
 
-fcli fod sast-scan start --release "$FOD_RELEASE" --file package.zip --store scan
+echo "Application  : $FOD_APPLICATION"
+echo "Microservice : $FOD_MICROSERVICE"
+echo "Release      : $FOD_RELEASE"
+
+fcli fod sast-scan start \
+  --release "$FOD_TARGET" \
+  --file package.zip \
+  --store scan
+
+
+#######################################################
+# Wait for Scan
+#######################################################
 
 echo "===== Waiting for Scan ====="
 
 fcli fod sast-scan wait-for ::scan::
 
-#######################################################
-# Create Reports Folder
-#######################################################
-
-mkdir -p reports
 
 #######################################################
-# Download FPR
-#######################################################
-echo "===== Downloading FPR ====="
-
-fcli fod sast-scan download \
-    ::scan:: \
-    -f reports/Fortify_Report.fpr
-
-echo "FPR downloaded successfully."
-
-#######################################################
-# Save Scan Summary
+# Policy / Quality Gate Check
 #######################################################
 
-echo "===== Saving Scan Summary ====="
-
-fcli fod sast-scan get \
-    ::scan:: \
-    -o json > reports/ScanSummary.json
-
-#######################################################
-# Generate Executive Summary
-#######################################################
-
-echo "===== Generating Executive Summary ====="
-
-# TODO:
-# Replace EXECUTIVE_TEMPLATE_ID with your FoD Report Template ID
-# Call POST /api/v3/reports
-# Poll until completed
-# Download report to:
-# reports/Executive_Summary.pdf
-
-#######################################################
-# Generate Developer Report
-#######################################################
-
-echo "===== Generating Developer Report ====="
-
-# TODO:
-# Replace DEVELOPER_TEMPLATE_ID with your FoD Report Template ID
-# Call POST /api/v3/reports
-# Download report to:
-# reports/Developer_Report.pdf
-
-#######################################################
-# Generate Vulnerability Report
-#######################################################
-
-echo "===== Generating Vulnerability Report ====="
-
-# TODO:
-# Replace VULNERABILITY_TEMPLATE_ID with your FoD Report Template ID
-# Call POST /api/v3/reports
-# Download report to:
-# reports/Vulnerability_Report.pdf
-
-#######################################################
-# Policy Check
-#######################################################
-
-echo "===== Running Policy Check ====="
+echo "===== Policy Check ====="
 
 fcli fod action run check-policy \
-    --release "$FOD_RELEASE"
+  --release "$FOD_TARGET"
+
 
 #######################################################
 # Logout
@@ -161,16 +170,18 @@ echo "===== Logout ====="
 
 fcli fod session logout
 
+
 #######################################################
-# Generated Files
+# Completed
 #######################################################
 
 echo ""
 echo "========================================="
-echo " Fortify Scan Completed Successfully"
+echo " Fortify FoD Scan Completed"
 echo "========================================="
 
-echo ""
-echo "Generated Reports:"
+echo "Application  : $FOD_APPLICATION"
+echo "Microservice : $FOD_MICROSERVICE"
+echo "Release      : $FOD_RELEASE"
 
-ls -lh reports
+echo "========================================="
